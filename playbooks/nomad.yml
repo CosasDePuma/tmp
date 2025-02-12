@@ -1,0 +1,289 @@
+---
+- name: "Nomad management"
+  hosts: "cluster"
+  become: true
+  gather_facts: true
+  # vars:
+  #   cni_version: "1.6.2"
+  #   nomad_exposed: false
+  tasks:
+    # +------------------------------------+
+    # |            INSTALLATION            |
+    # +------------------------------------+
+
+    - name: "Nomad | Add the APT repository key"
+      ansible.builtin.get_url:
+        url: "https://apt.releases.hashicorp.com/gpg"
+        dest: "/etc/apt/keyrings/hashicorp.asc"
+        mode: "0644"
+      when: "ansible_pkg_mgr == 'apt'"
+      tags: ["install", "nomad-install"]
+
+    - name: "Nomad | Add the APT repository"
+      ansible.builtin.apt_repository:
+        filename: "hashicorp"
+        repo: "deb [arch={{ 'amd64' if ansible_architecture == 'x86_64' else 'arm64' }} signed-by=/etc/apt/keyrings/hashicorp.asc] https://apt.releases.hashicorp.com {{ ansible_distribution_release }} main"  # yamllint disable-line rule:line-length
+        state: "present"
+        update_cache: true
+        install_python_apt: true
+      when: "ansible_pkg_mgr == 'apt'"
+      tags: ["install", "nomad-install"]
+
+    - name: "Nomad | Install the packages using APT"
+      ansible.builtin.apt:
+        name: ["nomad"]
+        state: "latest"
+        update_cache: true
+      when: "ansible_pkg_mgr == 'apt'"
+      tags: ["install", "nomad-install"]
+
+    - name: "Nomad | Install the DNF dependencies"
+      ansible.builtin.dnf:
+        name: ["dnf-plugins-core"]
+        state: "latest"
+        update_cache: true
+      when: "ansible_pkg_mgr == 'dnf'"
+      tags: ["install", "nomad-install"]
+
+    - name: "Nomad | Add the Hashicorp repository"
+      ansible.builtin.shell:
+        cmd: "dnf config-manager --add-repo https://rpm.releases.hashicorp.com/RHEL/hashicorp.repo"
+        creates: "/etc/yum.repos.d/hashicorp.repo"
+      when: "ansible_pkg_mgr == 'dnf'"
+      tags: ["install", "nomad-install"]
+
+    - name: "Nomad | Install the packages using DNF"
+      ansible.builtin.dnf:
+        name: ["nomad"]
+        state: "latest"
+        update_cache: true
+      when: "ansible_pkg_mgr == 'dnf'"
+      tags: ["install", "nomad-install"]
+
+    - name: "Nomad | Create the plugins directories"
+      ansible.builtin.file:
+        path: "/opt/cni/bin"
+        state: "directory"
+        owner: "root"
+        group: "root"
+      tags: ["install", "nomad-install"]
+
+    - name: "Nomad | Download the CNI plugin"
+      ansible.builtin.unarchive:
+        src: "https://github.com/containernetworking/plugins/releases/download/v{{ cni_version|default('1.6.2') }}/cni-plugins-linux-{{ 'amd64' if ansible_architecture == 'x86_64' else 'arm64' }}-v{{ cni_version|default('1.6.2') }}.tgz"  # yamllint disable-line rule:line-length
+        dest: "/opt/cni/bin"
+        remote_src: true
+        creates: "/opt/cni/bin/bridge"
+      tags: ["install", "nomad-install"]
+
+    - name: "Nomad | Create the directories"
+      ansible.builtin.file:
+        path: "/etc/nomad.d/storage"
+        state: "directory"
+        owner: "nomad"
+        group: "nomad"
+        mode: "0750"
+      tags: ["install", "nomad-install"]
+
+    - name: "Nomad | Populate the service facts"
+      ansible.builtin.service_facts: {}
+      tags: ["install", "nomad-install", "uninstall", "nomad-uninstall"]
+
+    - name: "Nomad | Configure the server"
+      ansible.builtin.copy:
+        dest: "/etc/nomad.d/nomad.hcl"
+        owner: "nomad"
+        group: "nomad"
+        mode: "0640"
+        # yamllint disable rule:indentation
+        content: |-
+          # +--------------------+
+          # |      GENERAL       |
+          # +--------------------+
+          name       = "{{ ansible_hostname }}"
+          datacenter = "lab"
+          region     = "global"
+          data_dir   = "/etc/nomad.d/storage"
+          # +--------------------+
+          # |        LOGS        |
+          # +--------------------+
+          log_level = "INFO"
+          log_file  = "/etc/nomad.d/nomad.log"
+          {% if 'cluster_servers' in group_names %}
+          # +--------------------+
+          # |       SERVER       |
+          # +--------------------+
+          server {
+            enabled           = true
+            bootstrap_expect  = {{ groups['cluster_servers'] | length }}
+          }
+          addresses {
+            http = "127.0.0.1"
+            rpc  = "{{ ansible_default_ipv4.address }}"
+            serf = "{{ ansible_default_ipv4.address }}"
+          }
+          advertise {
+            http = "127.0.0.1:4646"
+            rpc  = "{{ ansible_default_ipv4.address }}:4647"
+            serf = "{{ ansible_default_ipv4.address }}:4648"
+          }
+          {% endif %}
+          # +--------------------+
+          # |       CLIENT       |
+          # +--------------------+
+          client {
+            enabled = true
+
+            meta {
+              type = "{{ 'dmz' if 'cluster_dmz' in group_names else 'internal' }}"
+            }
+          }
+          {% if not 'cluster_servers' in group_names %}
+          server_join {
+            retry_join = [{{ groups['cluster_servers'] | map('tojson') | join(' ,') }}]
+          }
+          {% endif %}
+          {% if 'consul.service' in ansible_facts.services %}
+          # +--------------------+
+          # |       CONSUL       |
+          # +--------------------+
+          consul {
+            address             = "127.0.0.1:8500"
+            server_service_name = "nomad-server"
+            client_service_name = "nomad-client"
+            auto_advertise      = true
+            server_auto_join    = true
+            client_auto_join    = true
+          }
+          {% endif %}
+          # +--------------------+
+          # |       PLUGIN       |
+          # +--------------------+
+          plugin "docker" {
+            config {
+              endpoint         = "unix:///var/run/docker.sock"
+              allow_privileged = false
+              allow_caps       = [
+                "audit_write",
+                "chown",
+                "dac_override",
+                "fowner",
+                "fsetid",
+                "kill",
+                "mknod",
+                "net_bind_service",
+                "net_admin",
+                "set_fcap",
+                "setgid",
+                "setuid",
+                "sys_chroot",
+                "sys_module",
+              ]
+              volumes {
+                enabled = true
+              }
+            }
+          }
+        # yamllint enable rule:indentation
+      tags: ["install", "nomad-install"]
+
+    - name: "Nomad | Fix the service"
+      ansible.builtin.lineinfile:
+        dest: "/usr/lib/systemd/system/nomad.service"
+        regexp: "^{{ item }}="
+        line: "{{ item }}={{ 'nomad' if 'cluster_servers' in group_names and not 'cluster_dmz' in group_names else 'root' }}"
+      loop: ["User", "Group"]
+      tags: ["install", "nomad-install"]
+
+    - name: "Nomad | Restart the service"
+      ansible.builtin.service:
+        name: "nomad"
+        state: "restarted"
+        enabled: true
+        daemon_reload: true
+      tags: ["install", "nomad-install"]
+
+    - name: "Nomad | Open the firewall"
+      ansible.posix.firewalld:
+        immediate: true
+        permanent: true
+        port: "{{ item.1 }}"
+        state: "enabled"
+        zone: "{{ item.0 }}"
+      loop: "{{ (['dmz', 'internal'] if nomad_exposed|default('false')|bool else ['internal']) | product(['4647/tcp', '4648/tcp', '4648/udp']) | list }}"  # yamllint disable-line rule:line-length
+      when:
+        - "'cluster_servers' in group_names"
+        - "'firewalld.service' in ansible_facts.services"
+        - "ansible_facts.services['firewalld.service'].state == 'running'"
+      tags: ["install", "consul-install"]
+
+    # +------------------------------------+
+    # |           UNINSTALLATION           |
+    # +------------------------------------+
+
+    - name: "Nomad | Close the firewall"
+      ansible.posix.firewalld:
+        immediate: true
+        permanent: true
+        port: "{{ item.1 }}"
+        state: "disabled"
+        zone: "{{ item.0 }}"
+      loop: "{{ ['dmz', 'internal'] | product(['4646/tcp', '4647/tcp', '4648/tcp', '4648/udp']) | list }}"
+      when:
+        - "'firewalld.service' in ansible_facts.services"
+        - "ansible_facts.services['firewalld.service'].state == 'running'"
+      tags: ["uninstall", "consul-uninstall"]
+
+    - name: "Nomad | Stop the service"
+      ansible.builtin.service:
+        name: "nomad"
+        state: "stopped"
+        enabled: false
+      when:
+        - "'nomad.service' in ansible_facts.services"
+        - "ansible_facts.services['nomad.service'] == 'running'"
+      tags: ["uninstall", "nomad-uninstall"]
+
+    - name: "Nomad | Uninstall the packages using APT"
+      ansible.builtin.apt:
+        name: ["nomad"]
+        state: "absent"
+        autoclean: true
+        autoremove: true
+        purge: true
+      when: "ansible_pkg_mgr == 'apt'"
+      tags: ["uninstall", "nomad-uninstall"]
+
+    - name: "Nomad | Uninstall the packages using DNF"
+      ansible.builtin.dnf:
+        name: ["nomad"]
+        state: "absent"
+        autoremove: true
+      when: "ansible_pkg_mgr == 'dnf'"
+      tags: ["uninstall", "nomad-uninstall"]
+
+    - name: "Nomad | Reboot the system"
+      ansible.builtin.reboot: {}
+      tags: ["uninstall", "nomad-uninstall"]
+
+    - name: "Nomad | Remove the files and directories"
+      ansible.builtin.file:
+        name: "{{ item }}"
+        state: "absent"
+      loop:
+        - "/etc/apt/keyrings/hashicorp.asc"
+        - "/etc/apt/sources.list.d/hashicorp.list"
+        - "/etc/nomad.d"
+        - "/etc/systemd/system/nomad.service"
+        - "/etc/systemd/system/multi-user.target.wants/nomad.service"
+        - "/etc/yum.repos.d/hashicorp.repo"
+        - "/opt/nomad"
+        - "/var/lib/systemd/system/nomad.service"
+      tags: ["uninstall", "nomad-uninstall"]
+
+    - name: "Nomad | Reload the systemd daemon"
+      ansible.builtin.systemd:
+        daemon_reload: true
+      when: "ansible_service_mgr == 'systemd'"
+      tags: ["uninstall", "nomad-uninstall"]
+...

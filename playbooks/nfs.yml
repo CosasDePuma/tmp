@@ -1,0 +1,253 @@
+---
+- name: "NFS server management"
+  hosts: "cluster_nas[0]"
+  become: true
+  gather_facts: true
+  # vars:
+  #   nfs_export: "/mnt/nfs"
+  #   nfs_exposed: false
+  tasks:
+    # +------------------------------------+
+    # |        INSTALLATION: SERVER        |
+    # +------------------------------------+
+    - name: "NFS | Install the packages using APT"
+      ansible.builtin.apt:
+        name: ["nfs-kernel-server"]
+        state: "latest"
+        update_cache: true
+      when: "ansible_pkg_mgr == 'apt'"
+      tags: ["install", "nfs-server-install"]
+
+    - name: "NFS | Install the packages using DNF"
+      ansible.builtin.dnf:
+        name: ["nfs-utils"]
+        state: "latest"
+        update_cache: true
+      when: "ansible_pkg_mgr == 'dnf'"
+      tags: ["install", "nfs-server-install"]
+
+    - name: "NFS | Configure the server"
+      ansible.builtin.copy:
+        dest: "/etc/nfs.conf"
+        content: |-
+          [exportd]
+          [exports]
+          [exportfs]
+          [general]
+          pipefs-directory=/var/lib/nfs/rpc_pipefs
+          [gssd]
+          [lockd]
+          [mountd]
+          manage-gids=y
+          [nfsd]
+          host_name={{ ansible_hostname }}
+          tcp=y
+          udp=n
+          vers3=n
+          vers4=y
+          vers4.0=y
+          vers4.1=y
+          vers4.2=y
+          [nfsdcld]
+          [nfsdcltrack]
+          [nfsrahead]
+          [sm-notify]
+          [statd]
+        force: true
+      tags: ["install", "nfs-server-install"]
+
+    - name: "NFS | Create the shared directories"
+      ansible.builtin.file:
+        path: "{{ nfs_export | default('/mnt/nfs') }}"
+        state: "directory"
+        mode: "0755"
+        owner: "65534"
+        group: "65534"
+      tags: ["install", "nfs-server-install"]
+
+    - name: "NFS | Add the shared directories to the exports file"
+      ansible.builtin.blockinfile:
+        dest: "/etc/exports"
+        # yamllint disable rule:line-length
+        block: |-
+          {% for host in groups['cluster']|reject('equalto', groups['cluster_nas'][0]) %}
+          {{ nfs_export | default('/mnt/nfs') }} {{ host }}/32(rw,nohide,sync,no_subtree_check,root_squash,all_squash,anonuid=65534,anongid=65534)
+          {% endfor %}
+        # yamllint enable rule:line-length
+        marker: "# {mark} ANSIBLE MANAGED BLOCK"
+        create: true
+      tags: ["install", "nfs-server-install"]
+
+    - name: "NFS | Reload the NFS exports"
+      ansible.builtin.shell:
+        cmd: "exportfs -ra"
+      tags: ["install", "nfs-server-install"]
+
+    - name: "NFS | Populate the service facts"
+      ansible.builtin.service_facts: {}
+      tags: ["install", "nfs-server-install", "uninstall", "nfs-server-uninstall"]
+
+    - name: "NFS | Mask RPC bind services"
+      ansible.builtin.systemd:
+        name: "{{ item }}"
+        masked: true
+        state: "stopped"
+      when: "'rpcbind.service' in ansible_facts.services"
+      loop: ["rpcbind", "rpcbind.socket", "rpc-statd"]
+      tags: ["install", "nfs-server-install"]
+
+    - name: "NFS | Restart the service"
+      ansible.builtin.service:
+        name: "nfs-server"
+        state: "restarted"
+        enabled: true
+      tags: ["install", "nfs-server-install"]
+
+    - name: "NFS | Open the firewall"
+      ansible.builtin.firewalld:
+        immediate: true
+        permanent: true
+        port: "2049/tcp"
+        state: "enabled"
+        zone: "{{ item }}"
+      loop: "{{ ['dmz', 'internal'] if nfs_exposed|default(false)|bool else ['internal'] }}"
+      when:
+        - "'firewalld.service' in ansible_facts.services"
+        - "ansible_facts.services['firewalld.service'].state == 'running'"
+      tags: ["install", "nfs-server-install"]
+
+    # +------------------------------------+
+    # |       UNINSTALLATION: SERVER       |
+    # +------------------------------------+
+
+    - name: "NFS | Close the firewall"
+      ansible.builtin.firewalld:
+        immediate: true
+        permanent: true
+        port: "2049/tcp"
+        state: "disabled"
+        zone: "{{ item }}"
+      loop: ["dmz", "internal"]
+      when:
+        - "'firewalld.service' in ansible_facts.services"
+        - "ansible_facts.services['firewalld.service'].state == 'running'"
+      tags: ["uninstall", "nfs-server-uninstall"]
+
+    - name: "NFS | Stop the service"
+      ansible.builtin.service:
+        name: "nfs-server"
+        state: "stopped"
+        enabled: false
+      when: "'nfs-server.service' in ansible_facts.services"
+      tags: ["uninstall", "nfs-server-uninstall"]
+
+    - name: "NFS | Uninstall the packages using APT"
+      ansible.builtin.apt:
+        name: ["nfs-kernel-server"]
+        state: "absent"
+        autoclean: true
+        autoremove: true
+        purge: true
+      when: "ansible_pkg_mgr == 'apt'"
+      tags: ["uninstall", "nfs-server-uninstall"]
+
+    - name: "NFS | Uninstall the packages using DNF"
+      ansible.builtin.dnf:
+        name: ["nfs-utils"]
+        state: "absent"
+        autoremove: true
+      tags: ["uninstall", "nfs-server-uninstall"]
+
+    - name: "NFS | Remove the files and directories"
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: "absent"
+      loop: ["/etc/exports", "/etc/exports.d", "/etc/nfs.conf"]
+      tags: ["uninstall", "nfs-server-uninstall"]
+
+    - name: "NFS | Reload the systemd daemon"
+      ansible.builtin.systemd_service:
+        daemon_reload: true
+      when: "ansible_service_mgr == 'systemd'"
+      tags: ["uninstall", "nfs-server-uninstall"]
+
+# ======================================================
+
+- name: "NFS client management"
+  hosts: "cluster:!cluster_nas[0]"
+  become: true
+  gather_facts: true
+  # vars:
+  #   nfs_export: "/mnt/nfs"
+  tasks:
+    # +------------------------------------+
+    # |        INSTALLATION: CLIENT        |
+    # +------------------------------------+
+
+    - name: "NFS | Install NFS client using APT"
+      ansible.builtin.apt:
+        name: ["nfs-common"]
+        state: "latest"
+        update_cache: true
+      when: "ansible_pkg_mgr == 'apt'"
+      tags: ["install", "nfs-client-install"]
+
+    - name: "NFS | Install NFS client using DNF"
+      ansible.builtin.dnf:
+        name: ["nfs-utils"]
+        state: "latest"
+        update_cache: true
+      when: "ansible_pkg_mgr == 'dnf'"
+      tags: ["install", "nfs-client-install"]
+
+    - name: "NFS | Create the NFS mount directory"
+      ansible.builtin.file:
+        path: "/mnt/nfs"
+        state: "directory"
+        mode: "0755"
+        owner: "65534"
+        group: "65534"
+      tags: ["install", "nfs-client-install"]
+
+    - name: "NFS | Mount the NFS share"
+      ansible.posix.mount:
+        fstype: "nfs"
+        path: "/mnt/nfs"
+        opts: "nfsvers=4.1,defaults,nolock,rw,soft,sync"
+        src: "{{ groups['cluster_nas'][0] }}:{{ nfs_export | default('/mnt/nfs') }}"
+        state: "mounted"
+      tags: ["install", "nfs-client-install"]
+
+    # +------------------------------------+
+    # |       UNINSTALLATION: CLIENT       |
+    # +------------------------------------+
+
+    - name: "NFS | Unmount the NFS share"
+      ansible.posix.mount:
+        path: "/mnt/nfs"
+        state: "unmounted"
+      tags: ["uninstall", "nfs-client-uninstall"]
+
+    - name: "NFS | Remove the NFS mount directory"
+      ansible.builtin.file:
+        path: "/mnt/nfs"
+        state: "absent"
+      tags: ["uninstall", "nfs-client-uninstall"]
+
+    - name: "NFS | Uninstall NFS client using APT"
+      ansible.builtin.apt:
+        name: ["nfs-common"]
+        state: "absent"
+        autoclean: true
+        autoremove: true
+        purge: true
+      when: "ansible_pkg_mgr == 'apt'"
+      tags: ["uninstall", "nfs-client-uninstall"]
+
+    - name: "NFS | Uninstall NFS client using DNF"
+      ansible.builtin.dnf:
+        name: ["nfs-utils"]
+        state: "absent"
+        autoremove: true
+      tags: ["uninstall", "nfs-client-uninstall"]
+...

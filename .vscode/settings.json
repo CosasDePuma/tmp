@@ -1,0 +1,8 @@
+{
+    "yaml.schemas": {
+        "https://raw.githubusercontent.com/ansible/ansible-lint/main/src/ansiblelint/schemas/ansible.json": [
+            "file:///Users/pumita/Desktop/VAULT/GitHub/HomeLab/playbooks/cluster.yml",
+            "file:///Users/pumita/Desktop/VAULT/GitHub/HomeLab/playbooks/traefik.yml"
+        ]
+    }
+}
