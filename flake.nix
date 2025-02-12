@@ -11,9 +11,10 @@
           pkgs = import nixpkgs { inherit system; config.allowUnfree = true; };
         in with pkgs; {
           devShells.default = mkShell {
-            buildInputs = [ nixos-config nixos-rebuild ];
+            buildInputs = [ nixos-rebuild ];
             shellHook = ''
-              export PS1="\[\e[1;34m\]\u@\h 🏗️ \[\e[1;36m\] \w \[\e[1;32m\]➜ \[\e[1;0m\]"
+              export PS1="\033[1;34m\u@\h 🏗️ \033[1;36m \w \033[1;32m\n➜ \033[1;0m"
+              alias nixos-remote-switch="${nixos-rebuild}/bin/nixos-rebuild switch --use-remote-sudo --target-host";
             '';
           };
         }

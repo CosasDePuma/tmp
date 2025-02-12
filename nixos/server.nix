@@ -1,6 +1,7 @@
 { config, lib, pkgs, ... }:
   let
     user = "joker";
+    ip   = "192.168.1.2";
     domain = "kike.wtf";
   in
 {
@@ -21,13 +22,13 @@
 
   # Network interfaces
   networking.usePredictableInterfaceNames = false;
-  networking.interfaces."eth0".ipv4.addresses = [{ address = "192.168.1.2"; prefixLength = 24; }];  
+  networking.interfaces."eth0".ipv4.addresses = [{ address = "${ip}"; prefixLength = 24; }];  
   networking.defaultGateway = { interface = "eth0"; address = "192.168.1.1"; };
 
   # Firewall
   networking.firewall.enable = true;
-  networking.firewall.allowedTCPPorts = [ 80 443 8080 4646 ];
-  networking.firewall.allowedUDPPorts = [];
+  networking.firewall.allowedTCPPorts = [ 53 80 443 8080 ];
+  networking.firewall.allowedUDPPorts = [ 53 51820 ];
 
   # Localization
   time.timeZone = "Europe/Madrid";
@@ -102,18 +103,57 @@
   services.fail2ban.maxretry = 3;
   services.fail2ban.bantime = "30d";
 
+  # Services: NFS client
+  fileSystems."/mnt/nfs" = {
+    device = "192.168.1.253:/mnt/nfs";
+    mountPoint = "/mnt/nfs";
+    fsType = "nfs";
+    options = [ "nfsvers=4.2" "defaults" "nolock" "rw" "soft" "sync" "x-systemd.automount" "noauto" ];
+  };
+
+  # Services: DNS
+  services.dnsmasq.enable = true;
+  services.dnsmasq.settings.server = [ "1.1.1.1" "8.8.8.8" ];
+  services.dnsmasq.settings.address = [ "/${domain}/${ip}" "/*.${domain}/${ip}" ];
+  services.dnsmasq.settings.bind-interfaces = true;
+  services.dnsmasq.settings.interface = "eth0";
+  services.dnsmasq.settings.no-resolv = true;
+  services.dnsmasq.settings.cache-size = 1000;
+  services.dnsmasq.settings.dns-forward-max = 150;
+
   # Services: Traefik
   services.traefik.enable = true;
+  services.traefik.group = "podman";
+  services.traefik.dataDir = "/var/lib/traefik";
+  services.traefik.environmentFiles = [ "/mnt/nfs/lab/.env" ];
   services.traefik.staticConfigOptions = {
     accesslog.format = "common";
     accesslog.filepath = "/var/lib/traefik/access.log";
     api.dashboard = true;
     api.insecure = true;
+    certificatesResolvers.letsencrypt.acme.email = "acme@${domain}";
+    certificatesResolvers.letsencrypt.acme.storage = "/var/lib/traefik/acme.json";
+    certificatesResolvers.letsencrypt.acme.caServer = "https://acme-v02.api.letsencrypt.org/directory";
+    certificatesResolvers.letsencrypt.acme.certificatesDuration = 8760;
+    certificatesResolvers.letsencrypt.acme.preferredChain = "ISRG Root X1";
+    certificatesResolvers.letsencrypt.acme.keyType = "RSA4096";
+    certificatesResolvers.letsencrypt.acme.dnsChallenge.delayBeforeCheck = 0;
+    certificatesResolvers.letsencrypt.acme.dnsChallenge.provider = "cloudflare";
+    certificatesResolvers.letsencrypt.acme.dnsChallenge.resolvers = [ "1.1.1.1" "8.8.8.8" ];
     entrypoints.http.address = ":80/tcp";
+    entrypoints.http.asDefault = true;
+    entrypoints.http.http.redirections.entrypoint.to = "https";
+    entrypoints.http.http.redirections.entrypoint.scheme = "https";
     entrypoints.https.address = ":443/tcp";
+    entrypoints.https.http.tls.certResolver = "letsencrypt";
+    entrypoints.https.http.tls.domains = [ { main = "${domain}"; sans = [ "*.${domain}" ]; } ];
+    entrypoints.wireguard.address = ":51820/udp";
     global.checkNewVersion = true;
     global.sendAnonymousUsage = false;
     log.level = "DEBUG";
+    providers.docker.endpoint = "unix:///var/run/podman/podman.sock";
+    providers.docker.exposedByDefault = false;
+    providers.docker.watch = true;
   };
   services.traefik.dynamicConfigOptions = {
     http.middlewares.all.chain.middlewares = [ "compress@file" "jokes@file" ];
@@ -133,25 +173,43 @@
     http.middlewares.jokes.headers.customResponseHeaders.X-Clacks-Overhead = "GNU K.F.";
   };
 
-  # Services: Docker
-  virtualisation.docker.enable = true;
-  virtualisation.docker.autoPrune.enable = true;
-  virtualisation.docker.autoPrune.dates = "daily";
-  virtualisation.docker.autoPrune.flags = [ "--all" "--force" "--volumes" ];
+  # Services: Podman
+  virtualisation.oci-containers.backend = "podman";
+  virtualisation.podman.enable = true;
+  virtualisation.podman.dockerCompat = true;
+  virtualisation.podman.defaultNetwork.settings.dns_enabled = true;
+  virtualisation.podman.autoPrune.enable = true;
+  virtualisation.podman.autoPrune.dates = "daily";
+  virtualisation.podman.autoPrune.flags = [ "--all" "--force" "--volumes" ];
 
   # Containers: WG-Easy
   virtualisation.oci-containers.containers."wg-easy" = {
     image = "ghcr.io/wg-easy/wg-easy:latest";
+    volumes = [ "/mnt/nfs/lab/wg-easy:/etc/wireguard:rw" ];
     environment = {
       WG_HOST = "${domain}";
       WG_DEFAULT_ADDRESS = "10.10.0.x";
+      WG_DEFAULT_DNS="${ip}";
       WG_ALLOWED_IPS = "10.0.0.0/8,172.16.0.0/12,192.168.0.0/16";
       WG_LANG = "en";
       UI_CHART_TYPE = "2";
       UI_TRAFFIC_STATS = "true";
       UI_ENABLE_SORT_CLIENTS = "true";
     };
-    restartPolicy = "unless-stopped";
-    volumes = [ "/mnt/nfs/lab/wg-easy:/etc/wireguard:rw" ];
+    extraOptions = [
+      "--privileged"
+      "--sysctl=net.ipv4.conf.all.src_valid_mark=1"
+      "--sysctl=net.ipv4.ip_forward=1"
+    ];
+    labels = {
+      "traefik.enable" = "true";
+      "traefik.http.routers.wg-easy.rule" = "Host(`vpn.${domain}`)";
+      "traefik.http.routers.wg-easy.entrypoints" = "http,https";
+      "traefik.http.routers.wg-easy.service" = "wg-easy";
+      "traefik.http.services.wg-easy.loadbalancer.server.port" = "51821";
+      "traefik.udp.routers.wireguard.entrypoints" = "wireguard";
+      "traefik.udp.routers.wireguard.service" = "wireguard";
+      "traefik.udp.services.wireguard.loadbalancer.server.port" = "51820";
+    };
   };
 }
