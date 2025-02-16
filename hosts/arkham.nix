@@ -1,44 +1,15 @@
-{ config, lib, pkgs, ... }:
-  let
-    user = "joker";
-    ip   = "192.168.1.2";
-    domain = "kike.wtf";
-  in
-{
-  imports = [ ./hardware-configuration.nix ];
+{ pkgs, ... }:
+let
+  address = "192.168.1.2";
+  user = "joker";
+  domain = "kike.wtf";
+  nfs_server = "192.168.1.252:/mnt/nfs";
+in {
+  # Networking
+  networking.interfaces."eth0".ipv4.addresses = [{ inherit address; prefixLength = 24; }];
+  networking.defaultGateway.interface = "eth0";
 
-  # System
-  system.stateVersion = "24.11";
-  system.copySystemConfiguration = true;
-  nixpkgs.config.allowUnfree = true;
-
-  # Boot
-  boot.loader.grub.enable = true;
-  boot.loader.grub.device = "/dev/sda";
-
-  # DNS
-  networking.hostName = "arkham";
-  networking.nameservers = [ "1.1.1.1" "8.8.8.8" ];
-
-  # Network interfaces
-  networking.usePredictableInterfaceNames = false;
-  networking.interfaces."eth0".ipv4.addresses = [{ address = "${ip}"; prefixLength = 24; }];  
-  networking.defaultGateway = { interface = "eth0"; address = "192.168.1.1"; };
-
-  # Firewall
-  networking.firewall.enable = true;
-  networking.firewall.allowedTCPPorts = [ 53 80 443 8080 ];
-  networking.firewall.allowedUDPPorts = [ 53 51820 ];
-
-  # Localization
-  time.timeZone = "Europe/Madrid";
-
-  # Packages
-  environment.systemPackages = with pkgs; [ nano ];
-
-  # Users
-  users.groups."users" = {};
-
+  # User
   users.users."${user}" = {
     description = "Why so serious?";
     createHome = false;
@@ -49,63 +20,11 @@
     useDefaultShell = true;
     openssh.authorizedKeys.keys = [ "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIP9RzisL6wVQK3scDyEPEpFgrcdFYkW9LssnWlORGXof nixos@infra" ];
   };
-
-  # Maintenance: System GC
-  nix.gc.automatic = true;
-  nix.gc.dates = "weekly";
-  nix.gc.options = "--delete-older-than 7d";
-  nix.gc.persistent = true;
-
-  # Maintenance: System autoupgrade
-  system.autoUpgrade.enable = true;
-  system.autoUpgrade.allowReboot = true;
-  system.autoUpgrade.persistent = true;
-  system.autoUpgrade.dates = "weekly";
-
-  # Maintenance: Journald
-  services.journald.storage = "persistent";
-  services.journald.extraConfig = ''
-    MaxRetentionSec="1month"
-    RuntimeMaxUse="1G"
-    SystemMaxUse="2G"
-  '';
-
-  # Services: SSH
-  services.openssh.enable = true;
-  services.openssh.ports = [ 9022 ];
-  services.openssh.openFirewall = true;
-  services.openssh.authorizedKeysInHomedir = false;
   services.openssh.settings.AllowUsers = [ "${user}" ];
-  services.openssh.settings.KbdInteractiveAuthentication = false;
-  services.openssh.settings.PasswordAuthentication = true;
-  services.openssh.settings.PermitRootLogin = "no";
-  services.openssh.settings.X11Forwarding = false;
-  services.openssh.banner = ''
-    ==============================================================
-    |                   AUTHORIZED ACCESS ONLY                   |
-    ==============================================================
-    |                                                            |
-    |  WARNING: All connections are monitored and recorded       |
-    |  Disconnect IMMEDIATELY if you are not an authorized user! |
-    |                                                            |
-    |  * All actions are logged and monitored                    |
-    |  * Unauthorized access will be prosecuted                  |
-    |                                                            |
-    ==============================================================
-  '';
-  # -- ssh agent: eval "$(ssh-agent -s)" && ssh-add ~/.ssh/nixos
-  security.pam.sshAgentAuth.enable = true;
-  security.pam.sshAgentAuth.authorizedKeysFiles = [ "/etc/ssh/authorized_keys.d/%u" ];
-  security.pam.services.sudo.sshAgentAuth = true;
-
-  # Services: Fail2Ban
-  services.fail2ban.enable = true;
-  services.fail2ban.maxretry = 3;
-  services.fail2ban.bantime = "30d";
 
   # Services: NFS client
   fileSystems."/mnt/nfs" = {
-    device = "192.168.1.253:/mnt/nfs";
+    device = "${nfs_server}";
     mountPoint = "/mnt/nfs";
     fsType = "nfs";
     options = [ "nfsvers=4.2" "defaults" "nolock" "rw" "soft" "sync" "x-systemd.automount" "noauto" ];

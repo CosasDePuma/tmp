@@ -1,10 +1,1 @@
-- [x] FirewallD playbook
-- [x] NFS playbook
-- [ ] Docker playbook
-- [x] Nomad playbook
-- [x] Consul playbook
-- [ ] Vault playbook (?)
-- [x] Traefik playbook
-- [ ] Configure Nomad plugins
-- [ ] Configure Nomad ACL
-- [ ] Configure Consul ACL
+- [ ] Convert to flakes
