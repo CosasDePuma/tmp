@@ -6,7 +6,7 @@
   config.boot.loader.grub.efiInstallAsRemovable = lib.mkDefault true;
 
   # Kernel modules
-  config.boot.initrd.availableKernelModules = []; #[ "ata_piix" "uhci_hcd" "virtio_pci" "virtio_scsi" "sd_mod" "sr_mod" ];
+  config.boot.initrd.availableKernelModules = [ "ata_piix" "uhci_hcd" "virtio_pci" "virtio_scsi" "sd_mod" "sr_mod" ];
   
   # Filesystems
   config.fileSystems."/" = lib.mkDefault {
