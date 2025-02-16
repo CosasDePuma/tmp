@@ -1,1 +1,4 @@
-- [ ] Convert to flakes
+- [x] Convert to flakes
+- [x] Remote build
+- [x] `nixos-anywhere`
+- [ ] Snowfall

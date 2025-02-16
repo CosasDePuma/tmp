@@ -6,8 +6,10 @@ let
   nfs_server = "192.168.1.252:/mnt/nfs";
 in {
   # Networking
+  networking.hostName = "arkham";
   networking.interfaces."eth0".ipv4.addresses = [{ inherit address; prefixLength = 24; }];
   networking.defaultGateway.interface = "eth0";
+  networking.defaultGateway.address = "192.168.1.1";
 
   # User
   users.users."${user}" = {
@@ -33,7 +35,7 @@ in {
   # Services: DNS
   services.dnsmasq.enable = true;
   services.dnsmasq.settings.server = [ "1.1.1.1" "8.8.8.8" ];
-  services.dnsmasq.settings.address = [ "/${domain}/${ip}" "/*.${domain}/${ip}" ];
+  services.dnsmasq.settings.address = [ "/${domain}/${address}" "/*.${domain}/${address}" ];
   services.dnsmasq.settings.bind-interfaces = true;
   services.dnsmasq.settings.interface = "eth0";
   services.dnsmasq.settings.no-resolv = true;
@@ -108,7 +110,7 @@ in {
     environment = {
       WG_HOST = "${domain}";
       WG_DEFAULT_ADDRESS = "10.10.0.x";
-      WG_DEFAULT_DNS="${ip}";
+      WG_DEFAULT_DNS="${address}";
       WG_ALLOWED_IPS = "10.0.0.0/8,172.16.0.0/12,192.168.0.0/16";
       WG_LANG = "en";
       UI_CHART_TYPE = "2";

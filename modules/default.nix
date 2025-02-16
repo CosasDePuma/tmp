@@ -3,12 +3,6 @@
 
   # System
   system.stateVersion = pkgs.lib.mkDefault "24.11";
-  system.copySystemConfiguration = pkgs.lib.mkDefault true;
-  nixpkgs.config.allowUnfree = pkgs.lib.mkDefault true;
-
-  # Boot
-  boot.loader.grub.enable = pkgs.lib.mkDefault true;
-  boot.loader.grub.device = pkgs.lib.mkDefault "/dev/sda";
 
   # DNS
   networking.nameservers = pkgs.lib.mkDefault [ "1.1.1.1" "8.8.8.8" ];
