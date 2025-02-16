@@ -6,16 +6,18 @@
 
     remote-switch() {
       git add .
+      host="$1"; shift
       nixos-rebuild switch \
-        --target-host "$1" --use-remote-sudo \
-        --build-host "$1" --fast \
-        --flake .#
+        --target-host "$host" --use-remote-sudo \
+        --build-host "$host" --fast \
+        --flake .# $@
     }
 
     remote-minimal() {
+      host="$1"; shift
       nixos-anywhere \
-        --build-on-remote "$1" \
-        --flake .#minimal
+        --build-on-remote "$host" \
+        --flake .#minimal $@
     }
   '';
 }

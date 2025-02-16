@@ -1,4 +1,5 @@
-- [x] Convert to flakes
-- [x] Remote build
-- [x] `nixos-anywhere`
-- [ ] Snowfall
+- [x] Snowfall
+- [x] Shells: Nixos
+- [x] Nixos-Anywhere + Disko = System: Minimal
+- [ ] System: E-Corp
+- [ ] Topology with [`nix-topology`](https://github.com/oddlama/nix-topology)

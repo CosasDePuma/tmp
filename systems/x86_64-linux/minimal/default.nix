@@ -6,23 +6,14 @@
     (import ./disk-configuration.nix { inherit inputs lib; device = "/dev/sda"; })
   ];
 
-  # Boot
-  boot.loader.grub.enable = true;
-  boot.loader.grub.efiSupport = true;
-  boot.loader.grub.efiInstallAsRemovable = true;
-
-  # System packages
-  system.stateVersion = "24.05";
-  environment.systemPackages = with pkgs; [ curl gitMinimal nano neovim ];
-
   # Services: SSH
   services.openssh.enable = true;
   services.openssh.ports = [ 22 ];
   services.openssh.openFirewall = true;
   services.openssh.authorizedKeysInHomedir = false;
-  services.openssh.settings.KbdInteractiveAuthentication = false;
-  services.openssh.settings.PasswordAuthentication = false;
-  services.openssh.settings.PermitRootLogin = "prohibit-password";
+  services.openssh.settings.KbdInteractiveAuthentication = true;
+  services.openssh.settings.PasswordAuthentication = true;
+  services.openssh.settings.PermitRootLogin = "yes";
   services.openssh.settings.X11Forwarding = false;
   security.pam.sshAgentAuth.enable = true;
   security.pam.sshAgentAuth.authorizedKeysFiles = [ "/etc/ssh/authorized_keys.d/%u" ];

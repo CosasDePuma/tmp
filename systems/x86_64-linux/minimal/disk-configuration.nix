@@ -21,6 +21,7 @@
         content.format = "vfat";
         content.mountpoint = "/boot";
         content.mountOptions = [ "umask=0077" ];
+        content.extraArgs = [ "-nESP" ];
       };
 
       content.partitions.root = {
@@ -29,6 +30,7 @@
         content.type = "filesystem";
         content.format = "ext4";
         content.mountpoint = "/";
+        content.extraArgs = [ "-LNIXOS" ];
       };
     };
   }
