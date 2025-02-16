@@ -13,7 +13,6 @@ in
   networking.defaultGateway.address = ip_gw;
 
   # User
-  users.groups."users" = lib.mkDefault {};
   users.users."${user}" = {
     description = "Hello, friend.";
     createHome = false;
@@ -25,4 +24,8 @@ in
     openssh.authorizedKeys.keys = [ ssh_pub ];
   };
   services.openssh.settings.AllowUsers = [ user ];
+
+  # Services: SSH
+  services.openssh.enable = true;
+  services.fail2ban.enable = true;
 }
