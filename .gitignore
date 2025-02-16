@@ -1,2 +1,4 @@
 /**/.env
+/**/.old/
 /**/*.lock
+/**/hardware-configuration.nix
