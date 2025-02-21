@@ -17,7 +17,7 @@
       host="$1"; shift
       nixos-anywhere \
         --build-on-remote "$host" \
-        --flake .#minimal $@
+        --flake $@
     }
   '';
 }

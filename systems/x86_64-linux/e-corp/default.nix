@@ -1,11 +1,17 @@
-{ lib, ... }:
+{ lib, namespace, ... }:
 let
+  disk    = "/dev/sda";
   user    = "elliot";
+  root_pw = "Sg7ORsv^WN2v8M";
+  ssh_pub = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIP9RzisL6wVQK3scDyEPEpFgrcdFYkW9LssnWlORGXof nixos@infra";
   ip_priv = "192.168.1.2";
   ip_gw   = lib.concatStringsSep "." ((lib.take 3 (lib.splitString "." ip_priv)) ++ [ "1" ]);
-  ssh_pub = "ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIP9RzisL6wVQK3scDyEPEpFgrcdFYkW9LssnWlORGXof nixos@infra";
 in
 {
+  # Hardware
+  ${namespace}.hardware.disk = "/dev/sda";
+  #${namespace}.hardware.vm = true;
+
   # Networking
   networking.hostName = "e-corp";
   networking.interfaces."eth0".ipv4.addresses = [{ address = ip_priv; prefixLength = 24; }];
@@ -13,6 +19,7 @@ in
   networking.defaultGateway.address = ip_gw;
 
   # User
+  users.users."root".initialPassword = root_pw;
   users.users."${user}" = {
     description = "Hello, friend.";
     createHome = false;
