@@ -8,15 +8,16 @@ let
   ip_gw   = lib.concatStringsSep "." ((lib.take 3 (lib.splitString "." ip_priv)) ++ [ "1" ]);
 in
 {
-  # Hardware
-  ${namespace}.hardware.disk = "/dev/sda";
-  #${namespace}.hardware.vm = true;
+  # Modules
+  ${namespace} = {
+    # Hardware
+    hardware.disk = "/dev/sda";
+    hardware.vm = true;
 
-  # Networking
-  networking.hostName = "e-corp";
-  networking.interfaces."eth0".ipv4.addresses = [{ address = ip_priv; prefixLength = 24; }];
-  networking.defaultGateway.interface = "eth0";
-  networking.defaultGateway.address = ip_gw;
+    # Networking
+    networking.hostname = "e-corp";
+    #networking.ipv4 = "192.168.1.2";
+  };
 
   # User
   users.users."root".initialPassword = root_pw;
