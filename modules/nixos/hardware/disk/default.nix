@@ -16,6 +16,7 @@
       boot.loader.grub.enable = lib.mkDefault true;
       boot.loader.grub.efiSupport = lib.mkDefault true;
       boot.loader.grub.efiInstallAsRemovable = lib.mkDefault true;
+      hardware.enableAllHardware = lib.mkDefault true;
 
       # Disk
       disko.devices.disk."main" = {

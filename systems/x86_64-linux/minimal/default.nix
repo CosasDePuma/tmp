@@ -2,7 +2,7 @@
   "${namespace}" = {
     # Hardware
     hardware.disk = "/dev/sda";
-    hardware.isVM = true;
+    hardware.isVM = false;
 
     # i18n
     i18n.timezone = "Europe/Madrid";
