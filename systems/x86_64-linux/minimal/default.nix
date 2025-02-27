@@ -8,7 +8,7 @@
     i18n.timezone = "Europe/Madrid";
 
     # Networking
-    networking.hostName = "e-corp";
+    networking.hostName = "minimal";
     networking.ipv4 = "192.168.1.2";
 
     # System

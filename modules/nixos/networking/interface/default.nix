@@ -1,35 +1,37 @@
 { config, options, lib, namespace, ... }: {
   options.${namespace}.networking = {
-    hostname = lib.mkOption {
-      type = lib.types.str;
-      default = "nixos";
-      description = "The hostname of the machine.";
-    };
-
     ipv4 = lib.mkOption {
-      type = lib.types.str;
+      type = lib.types.singleLineStr;
       default = "dhcp";
-      description = "The IPv4 address of the machine. Can be set to 'dhcp' or a static IP address.";
+      description = "The IPv4 address to use for the host. Can be 'dhcp' or an IPv4 address.";
+    };
+    gateway4 = lib.mkOption {
+      type = lib.types.nullOr lib.types.singleLineStr;
+      default = null;
+      description = "The IPv4 address of the gateway to use for the host. If not specified, the gateway will be the first address (x.x.x.1).";
     };
   };
 
-  config = {
-    # Hostname
-    networking.hostName = lib.mkDefault options.${namespace}.networking.hostname;
-
+  config.networking = let
+    isStatic = config.${namespace}.networking.ipv4 != "dhcp";
+  in {
     # Interfaces
-    networking.usePredictableInterfaceNames = lib.mkDefault false;
-    #networking.networkmanager.enable = lib.mkDefault options.${namespace}.networking.ipv4 == "dhcp";
-    #networking.interfaces."eth0".ipv4.addresses = lib.mkIf (options.${namespace}.networking.ipv4 != "dhcp") {
-    #  address = options.${namespace}.networking.ipv4;
-    #  prefixLength = 24;
-    #};
-    #networking.defaultGateway = lib.mkIf (options.${namespace}.networking.ipv4 != "dhcp") {
-    #  interface = "eth0";
-    #  address = lib.concatStringsSep "." ((lib.take 3 (lib.splitString "." options.${namespace}.networking.ipv4)) ++ [ "1" ]);
-    #};
+    usePredictableInterfaceNames = lib.mkDefault false;
 
-    # DNS
-    networking.nameservers = lib.mkDefault [ "1.1.1.1" "8.8.8.8" ];
+    # Static IPv4 address
+    interfaces."eth0".ipv4.addresses = lib.lists.optional isStatic {
+      address = lib.mkDefault config.${namespace}.networking.ipv4;
+      prefixLength = lib.mkDefault 24;
+    };
+    defaultGateway = lib.mkIf isStatic {
+      address = lib.mkDefault (if config.${namespace}.networking.gateway4 == null
+        then lib.concatStringsSep "." ((lib.take 3 (lib.splitString "." config.${namespace}.networking.ipv4)) ++ [ "1" ])
+        else config.${namespace}.networking.gateway4);
+      interface = lib.mkDefault "eth0";
+    };
+
+    # Dynamic IPv4 address
+    networkmanager.enable = lib.mkDefault (!isStatic);
+    useDHCP = lib.mkDefault (!isStatic); 
   };
 }
